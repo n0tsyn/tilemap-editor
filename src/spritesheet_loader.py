@@ -4,6 +4,7 @@ import json
 def load_standard(pngpath, jsonpath):
     sheet, data = None, None
     imgs = list()
+    img_data = list()
             
     sheet = pygame.image.load(pngpath).convert_alpha()
     data = json.load(open(jsonpath))
@@ -22,5 +23,6 @@ def load_standard(pngpath, jsonpath):
             img.blit(sheet, pygame.Vector2(0, 0), (x, y, width, height))
 
             imgs.append(img)
+            img_data.append({'spritesheet': pngpath, 'positions': (x, y)})
 
-    return imgs
+    return imgs, img_data

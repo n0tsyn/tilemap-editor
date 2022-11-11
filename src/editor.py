@@ -1,14 +1,15 @@
 from src.spritesheet_loader import load_standard
 
-import pygame
 import os
 import pygame
+import math
 
 class Tile(pygame.sprite.Sprite):
     def __init__(self, position, img):
         pygame.sprite.Sprite.__init__(self)
 
         self.image = img
+        self.data = None
         self.original_image = self.image
         self.original_size = pygame.Vector2(self.original_image.get_size())
 
@@ -72,17 +73,31 @@ class Editor():
         view = pygame.Surface(pygame.Vector2(screen_dimensions.x - (screen_dimensions.x / 5), screen_dimensions.y - (screen_dimensions.y / 5))).convert_alpha()
         view.fill(pygame.Color(0, 0, 0, 0))
         self.view = view
+        self.view_rect = pygame.Rect(
+            0,
+            0,
+            screen_dimensions.x - (screen_dimensions.x / 5), 
+            screen_dimensions.y - (screen_dimensions.y / 5)
+            )
+
         self.view_offset = pygame.Vector2(screen_dimensions.x / 5, screen_dimensions.y / 5)
+        self.view_scroll_offset = pygame.Vector2()
 
         self.tile_dict = dict()
         self.tile_page = 0
         self.load_tiles()
         self.tiles = self.tile_dict[list(self.tile_dict.keys())[self.tile_page]]
-        self.selected_tile = None
-
+        self.selected = None
+        self.load_tileset()
+    
         self.grid = dict()
-        self.tile_size = None
-        self.map_size = None
+        self.grid_layer = 0
+
+        self.tile_size = 32
+        self.tile_pos = pygame.Vector2()
+        self.map_size = pygame.Vector2(200, 200)
+
+        self.load_grid()
         
     def load_tiles(self):
         img_path = os.path.join('imgs')
@@ -100,8 +115,10 @@ class Editor():
                 continue
             
             imgs = list()
-            for img in load_standard(os.path.join(img_path, sheet), match):
+            tile_imgs, data = load_standard(os.path.join(img_path, sheet), match)
+            for i, img in enumerate(tile_imgs):
                 new_img = Tile(pygame.Vector2(), pygame.transform.scale2x(img).convert_alpha())
+                new_img.data = data[i]
 
                 imgs.append(new_img)
 
@@ -124,10 +141,27 @@ class Editor():
             x += 1
 
     def load_grid(self):
-        ...
+        if not self.tile_size or not self.map_size:
+            return
+        
+        for y in range(int(self.map_size.y)):
+            for x in range(int(self.map_size.x)):
+                self.grid[(x * self.tile_size, y * self.tile_size)] = dict()
+                for i in range(10):
+                    self.grid[(x * self.tile_size, y * self.tile_size)][i] = None
+
+        self.view = pygame.transform.scale(self.view, pygame.Vector2(self.tile_size * self.map_size.x, self.tile_size * self.map_size.y)).convert_alpha()
 
     def display_grid(self):
-        ...
+        for pos, layers in self.grid.items():
+            if pos[0] > self.view_rect.width + self.view_scroll_offset.x or pos[1] > self.view_rect.height + self.view_scroll_offset.y:
+                continue
+                
+            for tile in layers.values():
+                if not tile:
+                    continue
+
+                tile.display(self.view)
 
     def check_mouse(self):
         for tile in self.tiles:
@@ -142,20 +176,56 @@ class Editor():
                 if not tile.hovering:
                     continue
                 
-                if tile != self.selected_tile:
-                    if self.selected_tile:
-                        self.selected_tile.selected = False
+                if tile != self.selected:
+                    if self.selected:
+                        self.selected.selected = False
 
-                    self.selected_tile = tile
+                    self.selected = tile
                     tile.selected = True
+
+            if self.view.get_rect().collidepoint(pygame.mouse.get_pos() - self.view_offset) and isinstance(self.selected, Tile):
+                new_tile = Tile(pygame.Vector2(self.tile_pos), self.selected.image.copy().convert_alpha())
+                new_tile.data = self.selected.data
+
+                self.grid[self.tile_pos][self.grid_layer] = new_tile
+
+    def check_hover(self):
+        mouse_grid_position = pygame.mouse.get_pos() - self.view_offset
+
+        if not self.view.get_rect().collidepoint(mouse_grid_position):
+            return 
+
+        if not isinstance(self.selected, Tile):
+            return
+
+        tile = self.selected.image.copy()
+        tile_offset = pygame.Vector2(tile.get_size()) / 2
+        grid_pos = dict()
+
+        for pos in self.grid.keys():
+            if pos[0] > mouse_grid_position.x or pos[1] > mouse_grid_position.y:
+                continue
+
+            rx = abs((pos[0] + tile_offset.x) - mouse_grid_position[0])
+            ry = abs((pos[1] + tile_offset.y) - mouse_grid_position[1])
+
+            grid_pos[pos] = math.sqrt(((rx **2) + (ry **2)))
+
+        min_value = min(grid_pos.values())
+        for pos, area in grid_pos.items():
+            if area == min_value:
+                self.tile_pos = pos
+
+        self.view.blit(tile, self.tile_pos)
 
     def update(self, screen):
         self.sidebar.fill(pygame.Color(25, 25, 25))
         self.topbar.fill(pygame.Color(30, 30, 30))
         self.view.fill(pygame.Color(0, 0, 0, 0))
                 
-        self.load_tileset()
         self.check_mouse()
+        self.display_grid()
+        self.check_hover()
 
         for tile in self.tiles:
             tile.display(self.sidebar)
